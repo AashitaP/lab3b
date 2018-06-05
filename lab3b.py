@@ -1,3 +1,5 @@
+#! /usr/bin/env python
+
 from __future__ import print_function
 import csv
 import sys
@@ -43,11 +45,10 @@ class Inode:
         self.linkCount = int(arg[6])
         self.fileSize = int(arg[10])
         self.numberBlocks = int(arg[11])
-        x = 12
-        for i in range(0, 15):
-            self.blockAddresses[i] = int(arg[x])
+        self.blockAddresses = list()
+        for x in range(12, 27):
+            self.blockAddresses.append(int(arg[x]))
             allocatedBlocks.add(int(arg[x]))
-            x += 1
         
 class Indirect:
     def __init__(self, arg):
@@ -103,13 +104,13 @@ def checkBlockConsistency():
                 duplicateBlocks[pointer].append((inode.inodeNumber, 65804))
             i += 1        
     for i in range(8, superblock.blockCount):
-        if i not in freeBlocks and allocatedBlocks:
+        if i not in freeBlocks and i not in allocatedBlocks:
             print ("UNREFERENCED BLOCK %d" %(i))
     for block in allocatedBlocks:
-        if block in freeBlocks:
-            print("ALLOCATED BLOCK %d ON FREELIST")
+        if block in freeBlocks and block in range(8, superblock.blockCount):
+            print("ALLOCATED BLOCK %d ON FREELIST" %(block))
     for key, value in duplicateBlocks.items():
-        if len(value) > 1:
+        if (len(value) > 1) and (key in range(8,superblock.blockCount)):
             for duplicate in value:
                 if (int(duplicate[1])) >= 65804:
                     print("DUPLICATE TRIPLE INDIRECT BLOCK %d IN INODE %d AT OFFSET %d" %(key, duplicate[0], duplicate[1]))
@@ -159,6 +160,11 @@ def main():
                     indirects.append(Indirect(row))
         except csv.Error as e:
             sys.exit('file %s, line %d: %s' % (csvfile, reader.line_num, e))
+    checkBlockConsistency()
+
+
+if __name__=="__main__":
+	main()
 
     
 
