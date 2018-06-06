@@ -11,10 +11,12 @@ group = None
 freeBlocks = set()
 allocatedBlocks = set()
 duplicateBlocks = dict()
-freeInodes = []
+freeInodes = set()
 inodes = []
 dirEntries = []
 indirects = []
+exit_code = 0
+
 
 class Superblock:
     def __init__(self, arg):
@@ -35,6 +37,14 @@ class Group:
         self.bitmap = int(arg[6])
         self.inodemap = int(arg[7])
         self.firstInode = int(arg[8])
+
+class DirectoryElement:
+    def __init__(self, arg):
+        self.parentInum = int (arg[1])
+        self.fileInum = int (arg[3])
+        self.lenOfElement = int (arg[4])
+        self.lenOfName = int (arg [5])
+        self.fileName = arg[6]
 
 class Inode:
     def __init__(self, arg):
@@ -122,9 +132,77 @@ def checkBlockConsistency():
                     print("DUPLICATE BLOCK %d IN INODE %d AT OFFSET %d" %(key, duplicate[0], duplicate[1]))
 
 
+def checknodeAlloc():
+    global superblock
+    global exit_code
+    
+    cnt_inode = superblock.inodeCount
+    
+    for i in range(0, cnt_inode):
+        if i != 2:
+            if i < 11:
+                continue
+    
+        al_fl = False
+        fr_fl = False
+        
+        for inode in inodes:
+            if inode.inodeNumber == i:
+                al_fl = True
+                break
+
+        if i in freeInodes:
+            fr_fl = True
+        
+        if al_fl == fr_fl:
+            if fr_fl:
+                print("ALLOCATED INODE %d ON FREELIST" % (i))
+                exit_code = 1
+            else:
+                print("UNALLOCATED INODE %d NOT ON FREELIST" % (i))
+                exit_code = 1
 
 
+def DirectoryConsistencyAuditing():
+    global superblock
+    global exit_code
+    
+    cnt_inode = superblock.inodeCount
+    holder = {}
+    
+    for inode in inodes:
+        cnt_links = 0
+        
+        for directory in dirEntries:
+            
+            if inode.inodeNumber == directory.fileInum:
+                cnt_links = 1 + cnt_links
 
+            elif inode.inodeNumber == directory.parentInum and not any(i.inodeNumber == directory.fileInum for i in inodes):
+                print("DIRECTORY INODE %d NAME %s UNALLOCATED INODE %d" %(directory.parentInum, directory.fileName, directory.fileInum))
+                exit_code = 1
+            
+            elif inode.inodeNumber == directory.parentInum and (directory.fileInum > cnt_inode or directory.fileInum < 1):
+                print("DIRECTORY INODE %d NAME %s INVALID INODE %d" %(directory.parentInum, directory.fileName, directory.fileInum))
+                exit_code = 1
+            
+            if directory.parentInum == 2 or (directory.fileName == "'..'" and directory.fileName == "'.'"):
+                holder[directory.fileInum] = directory.parentInum
+    
+        
+        if cnt_links != inode.linkCount:
+            print("INODE %d HAS %d LINKS BUT LINKCOUNT IS %d" % (inode.inodeNumber, cnt_links, inode.linkCount))
+            exit_code = 1
+
+    for directory in dirEntries:
+        
+        if directory.fileInum != holder[directory.parentInum] and directory.fileName == "'..'":
+            print("DIRECTORY INODE %d NAME '..' LINK TO INODE %d SHOULD BE %d" %(directory.parentInum,  directory.fileInum, holder[directory.parentInum]))
+            exit_code = 1
+        
+        elif directory.fileInum != directory.parentInum and directory.fileName == "'.'":
+            print("DIRECTORY INODE %d NAME '.' LINK TO INODE %d SHOULD BE %d" %(directory.parentInum, directory.fileInum, directory.parentInum))
+            exit_code = 1
 
 
 def main():
@@ -146,25 +224,31 @@ def main():
                 elif row[0] == "BFREE":
                     global freeBlocks
                     freeBlocks.add(int(row[1]))
-               # elif row[0] == "IFREE":
-                #    global freeInodes
-                 #   freeInodes.append(Ifree(row))
+                elif row[0] == "IFREE":
+                    global freeInodes
+                    freeInodes.add(int(row[1]))
                 elif row[0] == "INODE":
                     global inodes
                     inodes.append(Inode(row))
-               # elif row[0] == "DIRENT":
-                  #  global dirEntries
-                   # dirEntries.append(Directory(row))
+                elif row[0] == "DIRENT":
+                    global dirEntries
+                    dirEntries.append(DirectoryElement(row))
                 elif row[0] == "INDIRECT":
                     global indirects
                     indirects.append(Indirect(row))
         except csv.Error as e:
             sys.exit('file %s, line %d: %s' % (csvfile, reader.line_num, e))
     checkBlockConsistency()
+    checknodeAlloc()
+    DirectoryConsistencyAuditing()
 
 
 if __name__=="__main__":
-	main()
+    main()
+    if exit_code == 0:
+        exit(0)
+    else:
+        exit(2)
 
     
 

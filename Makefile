@@ -11,4 +11,4 @@ clean:
 
 # Build the distribution tarball
 dist: 
-	tar -cvzf lab3b-004810708.tar.gz 3b.py Makefile README
+	tar -cvzf lab3b-004810708.tar.gz lab3b.py Makefile README
